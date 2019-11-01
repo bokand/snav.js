@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<style>
+  body {
+    margin: 0;
+  }
+
+  body,html {
+    width: 100%;
+    height: 100%;
+  }
+
+  .scroller {
+    position: absolute;
+    top: 300px;
+    left: 450px;
+    width: 300px;
+    height: 300px;
+    overflow: auto;
+    border: solid black 2px;
+  }
+
+  .banner {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 80px;
+    background-color: coral;
+    padding-left: 80px;
+    font-size: 3em;
+    z-index: 1;
+  }
+
+  .button {
+    width: 200px;
+    height: 80px;
+    margin: 150px;
+    background-color: grey;
+  }
+</style>
+<script src="snav.js"></script>
+<script>
+  window.onload = () => {
+    snavInit();
+  };
+</script>
+
+<div class="banner">
+  <a id="logo" href="#">Logo</a>
+</div>
+
+<div class="button">
+  <a id="1" href="#">Button</a>
+</div>
+
+<div class="button">
+  <a id="2" href="#">Button</a>
+</div>
+
+<div class="button">
+  <a id="3" href="#">Button</a>
+</div>
+
+<div class="button">
+  <a id="4" href="#">Button</a>
+</div>
+
+<div class="button">
+  <a id="5" href="#">Button</a>
+</div>
+
+<div class="scroller" tabindex="-1">
+  <div class="button">
+    <a id="s1" href="#">Button</a>
+  </div>
+  <div class="button">
+    <a id="s2" href="#">Button</a>
+  </div>
+  <div class="button">
+    <a id="s3" href="#">Button</a>
+  </div>
+  <div class="button">
+    <a id="s4" href="#">Button</a>
+  </div>
+</div>
+
+<div style="height:2000px;">
+</div>
