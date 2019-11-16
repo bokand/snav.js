@@ -1,4 +1,3 @@
-
 function snavInit() {
   window.snav = {
     // The element that draws the interest ring.
@@ -35,12 +34,33 @@ function snavInit() {
   createInterest();
   registerListeners();
   registerIntersectionObserver();
+  enumerateNavigables();
+}
 
-  // TODO automate this
-  let a = document.querySelectorAll('a');
-  for (let elem of a)
-    addNavigableElement(elem);
-  addNavigableElement(document.querySelectorAll('.scroller')[0]);
+function isScroller(node) {
+  const overflowX = node.computedStyleMap().get('overflow-x');
+  const overflowY = node.computedStyleMap().get('overflow-y');
+
+  if ((overflowX != 'visible' && overflowX != 'hidden')) {
+    if (node.scrollWidth > node.clientWidth)
+      return true;
+  }
+
+  if ((overflowY != 'visible' && overflowY != 'hidden')) {
+    if (node.scrollHeight > node.clientHeight)
+      return true;
+  }
+
+  return false;
+}
+
+function enumerateNavigables() {
+  document.querySelectorAll('*').forEach((node) => {
+    if (node.tagName === 'A' ||
+        node.classList.contains('navigable') ||
+        isScroller(node))
+      addNavigableElement(node);
+  });
 }
 
 function createInterest() {
