@@ -1,3 +1,6 @@
+// TODO: Update interest ring when the interested element moves (e.g. due to
+//       layout or an animation).
+
 function snavInit() {
   window.snav = {
     // The element that draws the interest ring.
@@ -32,14 +35,30 @@ function snavInit() {
   };
 
   createInterest();
+  registerMutationObserver();
   registerListeners();
   registerIntersectionObserver();
-  enumerateNavigables();
+
+  // Do an initial seed of the navigable set. This might be slow? It should be
+  // measured on a bad page.
+  document.querySelectorAll('*').forEach((node) => {
+    if (isNavigable(node))
+      addNavigableElement(node);
+  });
 }
 
 function isScroller(node) {
+  if (!node)
+    return false;
+
+  if (node == document)
+    return true;
+
   const overflowX = node.computedStyleMap().get('overflow-x');
   const overflowY = node.computedStyleMap().get('overflow-y');
+
+  if (overflowX == 'scroll' || overflowY == 'scroll')
+    return true;
 
   if ((overflowX != 'visible' && overflowX != 'hidden')) {
     if (node.scrollWidth > node.clientWidth)
@@ -54,13 +73,18 @@ function isScroller(node) {
   return false;
 }
 
-function enumerateNavigables() {
-  document.querySelectorAll('*').forEach((node) => {
-    if (node.tagName === 'A' ||
-        node.classList.contains('navigable') ||
-        isScroller(node))
-      addNavigableElement(node);
-  });
+function isNavigable(node) {
+  if (node.tagName === 'A')
+    return true;
+
+  if (node.classList.contains('navigable'))
+    return true;
+
+  if (isScroller(node))
+    return true;
+
+  return false;
+
 }
 
 function createInterest() {
@@ -115,38 +139,6 @@ function getTestingPoint(dir, rect) {
   return pt;
 }
 
-function isContainer(node) {
-  //TODO: allow authors to specify containers manually using some attribute?
-  if (!node)
-    return false;
-
-  if (node == document)
-    return true;
-
-  const style = node.computedStyleMap();
-  const overflowX = style.get('overflow-x').value;
-  const overflowY = style.get('overflow-y').value;
-
-  if ((overflowX == 'visible' || overflowX == 'hidden') &&
-      (overflowY == 'visible' || overflowY == 'hidden'))
-    return false;
-
-  if (overflowX == 'scroll' || overflowY == 'scroll')
-    return true;
-
-  if (overflowY == 'auto') {
-    if (node.scrollHeight > node.clientHeight)
-      return true;
-  }
-
-  if (overflowX == 'auto') {
-    if (node.scrollWidth > node.clientWidth)
-      return true;
-  }
-
-  return false;
-}
-
 function getContainerFor(node) {
   if (!node || node == document)
     return document;
@@ -154,7 +146,7 @@ function getContainerFor(node) {
   let n = node.parentNode;
 
   while(n) {
-    if (isContainer(n))
+    if (isScroller(n))
       return n;
 
     n = n.parentNode;
@@ -219,7 +211,7 @@ function findClosestWithinContainer(searchOrigin, dir, container) {
 }
 
 function canScroll(container, dir) {
-  if (!isContainer(container)) {
+  if (!isScroller(container)) {
     console.error("Called canScroll on non container!");
     return false;
   }
@@ -239,7 +231,7 @@ function canScroll(container, dir) {
 
 function findClosest(dir) {
   const searchOrigin = snav.interestedElement;
-  let container = isContainer(searchOrigin)
+  let container = isScroller(searchOrigin)
       ? searchOrigin
       : getContainerFor(searchOrigin);
 
@@ -370,6 +362,26 @@ function registerListeners() {
   addEventListener("keyup", keyUpHandler);
 }
 
+function registerMutationObserver() {
+  // Listen to any node additions and removals under the body and add/remove
+  // the changes from the navigable set.
+  const callback = (mutationsList, observer) => {
+    for(let mutation of mutationsList) {
+      if (mutation.type === 'childList') {
+        mutation.addedNodes.forEach((node) => {
+          if (isNavigable(node))
+            addNavigableElement(node);
+        });
+        mutation.removedNodes.forEach((node) => {
+          removeNavigableElement(node);
+        });
+      }
+    }
+  };
+  const observer = new MutationObserver(callback);
+  observer.observe(document.body, { attributes: false, childList: true, subtree: false });
+}
+
 function printVisibles() {
   console.log("====VisibleElements");
   for (let e of snav.visibleElements) {
@@ -427,7 +439,9 @@ function addNavigableElement(elem) {
 
 function removeNavigableElement(elem) {
   const ix = snav.navigableElements.indexOf(elem);
-  // assert ix !== -1
+  if (ix == -1)
+    return;
+
   snav.navigableElements.splice(ix, 1);
   snav.observer.unobserve(elem);
 }
