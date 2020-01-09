@@ -1,6 +1,50 @@
 // TODO: Update interest ring when the interested element moves (e.g. due to
 //       layout or an animation).
+// TODO: Enable visibility testing on the intersection observer. It currently
+//       doesn't work because our "interest ring" is an element we place over
+//       top of the interested element. To the intersection observer, this
+//       makes it look like it's always obscured.
+// TODO: Make the interest ring work correctly under zoom (i.e. if the user
+//       zooms way in on a large interested element the ring might not be
+//       visible at all). It should probably be bounded by the visual viewport.
+// TODO: Make video controls work. This might require mucking with shadow DOM
+//       and I'm not entirely sure how this might be done. Might require help
+//       from the page or the video player.
+// TODO: Doesn't work inside IFRAMEs yet.
 
+// Usage: Call snavInit() to setup spatial-navigation for the page. That's it!
+//
+//
+// Terminology:
+//
+// Interest: Similar to focus, this is the element the user is currently
+//           looking at/interacting with. We say such an element is the
+//           "interested element" or "has interest". We draw a blue ring around
+//           the current interested element. We currently apply focus when an
+//           element becomes interested but that's a choice the framework can
+//           change.
+//
+// Navigable Element: Things like buttons, links, etc. that the user should be
+//                    able to apply interest to.
+//
+// Visible Elements: How it sounds: this is a set of all elements the framework
+//                   considers "visible". When we navigate interest, we
+//                   consider only these elements.
+//
+// This script sets up a bare-bones spatial-navigation implementation on the
+// page. The way this works is we setup a mutation observer to watch for
+// elements being added and removed from the DOM. When an element is added, we
+// check if it is navigable (i.e. is it clickable/a button/has the "navigable"
+// class) and if it is, we add it to the set of navigableElements. This allows
+// us to scan this set rather than walking the entire DOM tree every time a key
+// is pressed, on the assumption that the number of navigable elements will be
+// a small fraction of the total elements in the DOM.
+//
+// As a further optimization, we add an intersection observer to the viewport.
+// The observer watches all navigable elements and informs us when one
+// enters/leaves the viewport at which point we update the visibleElements set.
+// This further pares down the navigableElements to a small set of elements
+// that we need to check when the user presses an arrow key.
 function snavInit() {
   window.snav = {
     // The element that draws the interest ring.
@@ -9,7 +53,7 @@ function snavInit() {
     // Which element currently has interest.
     interestedElement: null,
 
-
+    // State for the intersection observer. An intersection observer is registered for the viewport and notifies us whenever a navigable
     observer: null,
     observerCallback: null,
 
@@ -27,20 +71,28 @@ function snavInit() {
     },
 
     flags: {
+      // When true, adds an outline style to all elements in the visible set
+      // for debugging.
       debugHighlightOnscreenTargets: false,
 
-      // Clashes with the interest ring (assumes we're invisible because the ring is above us).
+      // If true, the intersection obeserver that adds nodes to the "currently
+      // visible" set will also test for overlap (i.e. can the user actually
+      // see the node) from other nodes when considering whether a node is
+      // "visible".
+      // TODO: Clashes with the interest ring (assumes we're invisible because
+      // the ring is above us).
       testVisibility: false,
     },
   };
 
-  createInterest();
+  createInterestRing();
   registerMutationObserver();
   registerListeners();
   registerIntersectionObserver();
 
   // Do an initial seed of the navigable set. This might be slow? It should be
-  // measured on a bad page.
+  // measured on a bad page. Dynamic changes will be tracked using the mutation
+  // observer.
   document.querySelectorAll('*').forEach((node) => {
     if (isNavigable(node))
       addNavigableElement(node);
@@ -73,11 +125,24 @@ function isScroller(node) {
   return false;
 }
 
+// Used to determine if a given node should be able to have interest move to
+// it. Modify this with conditions to allow more elements to become interested.
 function isNavigable(node) {
-  if (node.tagName === 'A')
+  if (node.type && node.type.toUpperCase() === 'HIDDEN')
+    return false;
+
+  if (node.tagName === 'A' ||
+      node.tagName === 'BUTTON' ||
+      node.tagName === 'VIDEO' ||
+      node.tagName === 'INPUT')
     return true;
 
+  // A page can make any element navigable by adding this class to it.
   if (node.classList.contains('navigable'))
+    return true;
+
+  const role = node.getAttribute('role');
+  if (role && role.toUpperCase() === 'BUTTON')
     return true;
 
   if (isScroller(node))
@@ -87,7 +152,7 @@ function isNavigable(node) {
 
 }
 
-function createInterest() {
+function createInterestRing() {
   let e = document.createElement('div');
   e.style.width = "50px";
   e.style.height = "50px";
@@ -98,6 +163,7 @@ function createInterest() {
   e.style.border = "solid 3px dodgerblue";
   e.style.borderRadius = "5px";
   e.style.visibility = "hidden";
+  e.id = "snavInterestRing";
   snav.interestRing = e;
 
   document.body.appendChild(snav.interestRing);
@@ -266,7 +332,8 @@ function advance(dir) {
 }
 
 function moveInterestTo(next) {
-  next.focus();
+  if (next)
+    next.focus();
 
   snav.interestedElement = next;
   refreshInterestRing();
@@ -304,6 +371,7 @@ function getContainerRelativeRect(e) {
   return rect;
 }
 
+// Sizes/styles the interest ring according to the currently interested node.
 function refreshInterestRing() {
   const e = snav.interestedElement;
   const ring = snav.interestRing;
@@ -332,10 +400,19 @@ function refreshInterestRing() {
 
   const margin = 6;
   const border = 3;
-  ring.style.width = rect.width + margin + "px";
-  ring.style.height = rect.height + margin + "px";
-  ring.style.left = rect.x - border - margin/2 + "px";
-  ring.style.top = rect.top - border - margin/2 + "px";
+
+  // TODO: This should account for the zoom by using visual viewport.
+  const width = Math.min(rect.width + margin,
+                       window.innerWidth - border * 2);
+  const height = Math.min(rect.height + margin,
+                        window.innerHeight - border * 2);
+  const x = Math.max(rect.x - border - margin/2, 0);
+  const y = Math.max(rect.top - border - margin/2, 0);
+
+  ring.style.width = width + "px";
+  ring.style.height = height + "px";
+  ring.style.left = x + "px";
+  ring.style.top = y + "px";
   ring.style.visibility = "visible";
 }
 
@@ -369,6 +446,14 @@ function registerMutationObserver() {
     for(let mutation of mutationsList) {
       if (mutation.type === 'childList') {
         mutation.addedNodes.forEach((node) => {
+          if (node.nodeType != Node.ELEMENT_NODE)
+            return;
+
+          // For debugging.
+          //if (!snav.interestRing || node.id != snav.interestRing.id) {
+          //  console.log('Added: ' + node.tagName + '[' + node.id + ']');
+          //}
+
           if (isNavigable(node))
             addNavigableElement(node);
         });
@@ -379,7 +464,7 @@ function registerMutationObserver() {
     }
   };
   const observer = new MutationObserver(callback);
-  observer.observe(document.body, { attributes: false, childList: true, subtree: false });
+  observer.observe(document.body, { attributes: false, childList: true, subtree: true });
 }
 
 function printVisibles() {
@@ -413,6 +498,7 @@ function observerCallback(entries, observer) {
       else
         entry.target.style.outline = "";
 
+      // For Debugging.
       //printVisibles();
     }
 
